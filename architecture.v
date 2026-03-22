@@ -7,7 +7,7 @@ wire [1:0] Aluop,MemtoReg;
 wire [31:0]PCaddress;
 //wire b;
 MUX #(32)M9(PCaddress,ALUOut[31:0],jump,PCinput);
-PCCounter P1(clk,PCinput,PC);
+PCCounter P1(clk, 1'b1, PCinput, PC);  // PCen tied high permanently
 adder A1(PC,PCPlus4);
 instructionmemory I1(PC,RD);
 mainController M1(RD[6:0],ALUSrc, MemtoReg, RegWrite, MemRead, MemWrite, Branch,jump,Asel,Aluop);
