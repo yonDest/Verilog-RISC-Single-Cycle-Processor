@@ -14,6 +14,7 @@ A fully functional 32-bit RISC-V (RV32I) single-cycle processor implemented in s
 - [File Structure](#file-structure)
 - [Simulation & Getting Started](#simulation--getting-started)
 - [Design Decisions & Notes](#design-decisions--notes)
+- [Potential Extensions](#potential-extensions)
 
 ---
 
@@ -79,56 +80,49 @@ A fully functional 32-bit RISC-V (RV32I) single-cycle processor implemented in s
 
 ```
                           ┌───────────────────────────────────────────────────────┐
-                          │                    ARCHITECTURE                        │
+                          │                    architecture.v                      │
                           │                                                         │
-  ┌────────┐   PC    ┌────┴─────────┐   RD[31:0]   ┌────────────────┐             │
-  │   PC   │────────►│ Instruction  │──────────────►│ Main Controller│             │
-  │Counter │         │   Memory     │               │  (Opcode→ctrl) │             │
-  └────────┘         └─────────────┘               └────────┬───────┘             │
-       ▲                    │                                │ Control Signals       │
-       │                    │ RD[31:0]                       │ ALUSrc,MemtoReg,      │
-  ┌────┴────┐               │                                │ RegWrite,MemRead,     │
-  │  MUX    │◄──────────────│──────────── Branch/Jump        │ MemWrite,Branch,      │
-  │(PC Sel) │               │             address            │ Jump,ALUop,Asel       │
-  └────┬────┘               ▼                                │                       │
-       │              ┌─────────────┐                        │                       │
-  ┌────┴────┐         │  Register   │◄───── RegWrite ────────┘                       │
-  │  Adder  │         │    File     │                                                │
-  │  PC+4   │         │ (32×32-bit) │                                                │
-  └─────────┘         └──────┬──────┘                                               │
-                        RD1  │  RD2                                                  │
-                             │                                                        │
-                    ┌────────▼────────┐       ┌─────────────┐    ┌──────────────┐   │
-                    │   MUX (Asel)    │       │  Immediate  │    │ ALU Control  │   │
-                    │  RD1 or PC      │       │  Generation │    │ (funct3/7)   │   │
-                    └────────┬────────┘       └──────┬──────┘    └──────┬───────┘   │
-                             │                        │                   │           │
-                    sign-ext │              ┌─────────▼──────┐           │           │
-                    to 64b   │              │  MUX (ALUSrc)  │           │           │
-                             │              │  RD2 or imm    │           │           │
-                             │              └────────┬───────┘           │           │
-                             │                       │                   │           │
-                             └──────────► ┌──────────▼──────────────────▼──┐        │
-                                          │             ALU                 │        │
-                                          │  (64-bit: AND,OR,ADD,SUB,      │        │
-                                          │   SLL,SLT,SLTU,XOR,SRL,SRA)   │        │
-                                          └──────────────┬─────────────────┘        │
-                                                  ALUOut │  Zero flag                │
-                                                         │                           │
-                                               ┌─────────▼──────┐                   │
-                                               │  Data Memory   │                   │
-                                               │  (Read/Write)  │                   │
-                                               └─────────┬──────┘                   │
-                                                         │                           │
-                                               ┌─────────▼──────┐                   │
-                                               │  MUX1 (3-way)  │ ◄── MemtoReg     │
-                                               │ ALUOut/DataOut/ │                   │
-                                               │    PC+4         │                   │
-                                               └─────────┬──────┘                   │
-                                                         │                           │
-                                                    WriteData → Register File        │
-                                                                                     │
-                          └───────────────────────────────────────────────────────┘
+  ┌────────────┐   PC    ┌┴──────────────────┐  RD[31:0]  ┌─────────────────┐    │
+  │ PCCounter  │────────►│ InstructionMemory  │───────────►│ MainController  │    │
+  └────────────┘         └───────────────────┘            └────────┬────────┘    │
+        ▲                         │                                 │ Control      │
+        │                         │ RD[31:0]                        │ signals      │
+  ┌─────┴──────┐                  │                                 │              │
+  │  MUX(Jump) │◄─── ALUOut ──────│─────────────────────────────────│──────┐      │
+  └─────┬──────┘                  │                                 │      │      │
+        │                         ▼                                 │      │      │
+  ┌─────┴──────┐         ┌─────────────────┐                        │      │      │
+  │ MUX(Branch)│         │  RegisterFile   │◄── RegWrite ───────────┘      │      │
+  └─────┬──────┘         └────────┬────────┘                               │      │
+        │                   RD1   │  RD2                                    │      │
+        │                         │                                         │      │
+  ┌─────┴──────┐  ┌───────────────▼──────┐  ┌──────────────────┐           │      │
+  │   Adder    │  │    MUX (Asel)        │  │ ImmediateGenerat.│           │      │
+  │   (PC+4)   │  │  rs1 or PC → ALU[A] │  └────────┬─────────┘           │      │
+  └─────┬──────┘  └───────────┬──────────┘           │                     │      │
+        │                     │ sign-ext to 64b       │  ┌──────────────┐   │      │
+        │                     │              ┌────────▼──┤ MUX (ALUSrc) │   │      │
+        │                     │              │           │  rs2 or imm  │   │      │
+        │                     │              │           └──────┬───────┘   │      │
+        │                     │              │                  │            │      │
+        │                     └────────► ┌───▼──────────────────▼─────────────┐   │
+        │                                │               ALU                   │   │
+        │                                │  AND OR ADD SUB SLL SRL SRA        │   │
+        │                                │  SLT SLTU XOR  (64-bit)            │   │
+        │                                └──────────────┬─────────────────────┘   │
+        │                                         ALUOut │  Zero                   │
+        │                                               │                          │
+        │                                    ┌──────────▼──────┐                  │
+        │                                    │   DataMemory    │                  │
+        │                                    └──────────┬──────┘                  │
+        │                                               │                          │
+        │                                    ┌──────────▼──────┐                  │
+        └────────────────────────────────────► MUX1 (MemtoReg) │                  │
+                                             │ ALUOut|Mem|PC+4 │                  │
+                                             └──────────┬──────┘                  │
+                                                        │                          │
+                                                   WriteData → RegisterFile        │
+                                          └───────────────────────────────────────┘
 ```
 
 ---
@@ -136,9 +130,9 @@ A fully functional 32-bit RISC-V (RV32I) single-cycle processor implemented in s
 ## Module Breakdown
 
 ### `architecture.v` — Top-Level Datapath
-Instantiates and wires all submodules. Routes control signals from the main controller to every datapath component. Handles the branch/jump PC selection logic using a two-stage MUX chain: one for branch (gated by `BEQ AND Zero`), one for jump (`JAL`/`JALR`).
+Instantiates and wires all submodules using named port connections. Routes control signals from `MainController` to every datapath component. Handles the branch/jump PC selection logic with a two-stage MUX chain — one for branch (gated by `BEQ AND Zero`), one for jump (`JAL`/`JALR`).
 
-### `mainController.v` — Main Control Unit
+### `MainController.v` — Main Control Unit
 Decodes the 7-bit opcode into 9 control signals:
 
 | Signal | Purpose |
@@ -154,65 +148,66 @@ Decodes the 7-bit opcode into 9 control signals:
 | `Asel` | Selects ALU first operand: rs1 vs. PC (for JAL/JALR) |
 
 ### `ALUControl.v` — ALU Control Decoder
-Translates the 2-bit `ALUop` + `funct7[30]` + `funct3[2:0]` fields into a 4-bit ALU control word covering all 10 ALU operations.
+Translates the 2-bit `ALUop` + `funct7[30]` + `funct3[2:0]` into a 4-bit ALU control word covering all 10 ALU operations.
 
 ### `ALU.v` — Arithmetic Logic Unit
-Parameterized 64-bit ALU supporting:
-`AND`, `OR`, `ADD`, `SUB`, `SLL`, `SLT` (signed), `SLTU` (unsigned), `XOR`, `SRL`, `SRA`
+Parameterized 64-bit ALU supporting `AND`, `OR`, `ADD`, `SUB`, `SLL`, `SLT` (signed), `SLTU` (unsigned), `XOR`, `SRL`, `SRA`. Uses `$signed()` casts for correct signed comparison and arithmetic shift. Outputs a `zero` flag used by the branch logic.
 
-Outputs a `zero` flag used by the branch logic.
-
-### `Registerfile.v` — Register File
-32 × 32-bit register file. Register `x0` is hardwired to zero (read returns 0 regardless of write). Synchronous write on positive clock edge; asynchronous read.
+### `RegisterFile.v` — Register File
+32 × 32-bit register file. `x0` is hardwired to zero — writes to address 0 are blocked, reads always return 0. Synchronous write on positive clock edge; asynchronous read.
 
 ### `InstructionMemory.v` — Instruction ROM
-Word-addressed (by byte address), 512-entry ROM pre-loaded with a test program covering all implemented instruction types. Can be extended with `$readmemh` for external program loading.
+Word-addressed (by byte address), 512-entry ROM pre-loaded with a 17-instruction test program covering all implemented instruction types. Easily extended with `$readmemh` for external program loading.
 
 ### `DataMemory.v` — Data RAM
-512 × 32-bit word-addressed RAM. Supports combinational read (`MemRead`) and synchronous write (`MemWrite`). Pre-loaded with values `0x00–0x07` for simulation.
+512 × 32-bit word-addressed RAM. Combinational read (`MemRead`) and combinational write (`MemWrite`). Pre-loaded with values `0x00–0x07` for simulation.
 
 ### `ImmediateGeneration.v` — Immediate Generator
-Extracts and sign-extends immediates for all supported format types:
-- **I-type**: 12-bit sign-extended
-- **S-type**: split across `inst[31:25]` and `inst[11:7]`
-- **B-type**: scrambled bit pattern reassembled and sign-extended
-- **J-type (JAL)**: 20-bit immediate with non-contiguous bit layout
+Extracts and sign-extends immediates for all supported format types. Faithfully reassembles the non-contiguous B-type and J-type bit fields that RISC-V scrambles to reduce mux hardware in pipelined implementations.
+
+| Format | Bits Used |
+|---|---|
+| I-type | `[31:20]` |
+| S-type | `[31:25]`, `[11:7]` |
+| B-type | `[31]`, `[7]`, `[30:25]`, `[11:8]` |
+| J-type | `[31]`, `[19:12]`, `[20]`, `[30:21]` |
 
 ### `PCCounter.v` — Program Counter
-Synchronous register updated on each positive clock edge with the next PC value selected by the datapath MUXes.
+Synchronous register updated on each positive clock edge. `PCen` is tied high in the top-level for normal execution; retaining it as a port preserves a clean interface point for future stall/hazard support.
 
 ### `MUX.v` — 2-to-1 Multiplexer
-Parameterized 2-to-1 MUX used for: ALUSrc, Branch/Jump PC selection, and ALU first-operand selection (`Asel`).
+Parameterized 2-to-1 MUX. Used for `ALUSrc`, branch/jump PC selection, and ALU A-input selection (`Asel`).
 
-### `MUX1.v` — 3-to-1 Multiplexer
-Parameterized 3-to-1 MUX for the writeback stage — selects between ALU result, memory read data, or PC+4 (for JAL/JALR link register write).
+### `MUX1.v` — 3-to-1 Multiplexer (Writeback)
+Parameterized 3-to-1 MUX for the writeback stage — selects among ALU result, memory read data, or PC+4 (for JAL/JALR link register write) in a single level of logic.
 
 ### `Adder.v` — PC+4 Adder
 Dedicated combinational adder that computes `PC + 4` for the sequential program counter update.
 
-### `add.v` — Branch Target Adder
-General-purpose combinational adder used for computing the branch target address: `PC + (imm << 1)`.
+### `BranchAdder.v` — Branch Target Adder
+Combinational adder for the branch target address: `PC + (imm << 1)`. Receives the already-shifted offset from `LeftShift.v`.
 
-### `shift.v` — Immediate Left-Shift
-Left-shifts the sign-extended immediate by 1 bit to produce the branch offset (RISC-V branch immediates encode the offset in units of 2 bytes).
+### `LeftShift.v` — Immediate Left-Shift
+Left-shifts the sign-extended immediate by 1 bit to recover the true byte offset before it is added to the PC. Required because RISC-V branch and JAL immediates encode offset/2 — the LSB is always 0 and is not stored in the instruction.
 
 ---
 
 ## Datapath Signal Flow
 
 ```
-Fetch    →  PC → InstructionMemory → RD[31:0]
-Decode   →  RD → MainController (control signals)
-         →  RD → RegisterFile (rs1, rs2 read)
-         →  RD → ImmediateGeneration (sign-extended imm)
-         →  RD → ALUControl (funct3, funct7)
-Execute  →  MUX(Asel): rs1 or PC → sign-extend → ALU input A
-         →  MUX(ALUSrc): rs2 or imm → ALU input B
+Fetch    →  PC → InstructionMemory → Instruction[31:0]
+Decode   →  Instruction → MainController     (control signals)
+         →  Instruction → RegisterFile       (rs1, rs2 read)
+         →  Instruction → ImmediateGeneration (sign-extended imm)
+         →  Instruction → ALUControl          (funct3, funct7)
+Execute  →  MUX(Asel):   rs1 or PC  → sign-extend → ALU input A
+         →  MUX(ALUSrc): rs2 or imm               → ALU input B
          →  ALU → ALUOut, Zero
-         →  Branch: Zero AND Branch → branchaddress MUX
-         →  Jump: MUX(jump) → PCinput
-Memory   →  DataMemory(ALUOut, RD2) → DataOutput
-Writeback → MUX1(MemtoReg): ALUOut | DataOutput | PC+4 → Writedata → RegisterFile
+         →  BranchGate:  Zero AND Branch → select PCBranch
+         →  MUX(Branch): PCPlus4 or PCBranch → PCNext
+         →  MUX(Jump):   PCNext   or ALUOut  → PC
+Memory   →  DataMemory(ALUOut, rs2) → ReadData
+Writeback → MUX1(MemtoReg): ALUOut | ReadData | PC+4 → WriteData → RegisterFile
 ```
 
 ---
@@ -221,20 +216,22 @@ Writeback → MUX1(MemtoReg): ALUOut | DataOutput | PC+4 → Writedata → Regis
 
 ```
 .
-├── architecture.v         # Top-level datapath integration
-├── mainController.v       # Opcode → control signal decoder
-├── ALUControl.v           # funct3/funct7 → ALU operation decoder
-├── ALU.v                  # 64-bit parameterized ALU
-├── Registerfile.v         # 32×32-bit general-purpose register file
-├── InstructionMemory.v    # Word-addressed instruction ROM (512 entries)
-├── DataMemory.v           # Word-addressed data RAM (512 entries)
-├── ImmediateGeneration.v  # Multi-format immediate sign-extension
-├── PCCounter.v            # Program counter register
-├── MUX.v                  # Parameterized 2-to-1 MUX
-├── MUX1.v                 # Parameterized 3-to-1 MUX (writeback select)
-├── Adder.v                # PC+4 combinational adder
-├── add.v                  # Branch target adder
-└── shift.v                # 1-bit left shift for branch offset
+├── architecture.v          # Top-level datapath integration
+├── MainController.v        # Opcode → control signal decoder
+├── ALUControl.v            # funct3/funct7 → ALU operation decoder
+├── ALU.v                   # 64-bit parameterized ALU (10 operations)
+├── RegisterFile.v          # 32×32-bit general-purpose register file
+├── InstructionMemory.v     # Word-addressed instruction ROM (512 entries)
+├── DataMemory.v            # Word-addressed data RAM (512 entries)
+├── ImmediateGeneration.v   # Multi-format immediate sign-extension
+├── PCCounter.v             # Program counter register
+├── MUX.v                   # Parameterized 2-to-1 MUX
+├── MUX1.v                  # Parameterized 3-to-1 MUX (writeback select)
+├── Adder.v                 # PC+4 combinational adder
+├── BranchAdder.v           # Branch target adder (PC + shifted imm)
+├── LeftShift.v             # 1-bit left shift for branch/jump offset scaling
+└── sim/
+    └── tb_architecture.v   # Self-checking testbench with waveform dump
 ```
 
 ---
@@ -248,64 +245,77 @@ Writeback → MUX1(MemtoReg): ALUOut | DataOutput | PC+4 → Writedata → Regis
 ### Compile & Simulate (Icarus Verilog)
 
 ```bash
-# Compile all modules with the top-level as the root
-iverilog -o processor.vvp architecture.v ALU.v ALUControl.v mainController.v \
-         Registerfile.v InstructionMemory.v DataMemory.v ImmediateGeneration.v \
-         PCCounter.v MUX.v MUX1.v Adder.v add.v shift.v
+iverilog -o sim.vvp sim/tb_architecture.v \
+  architecture.v MainController.v ALUControl.v ALU.v \
+  RegisterFile.v InstructionMemory.v DataMemory.v \
+  ImmediateGeneration.v PCCounter.v MUX.v MUX1.v \
+  Adder.v BranchAdder.v LeftShift.v
 
-# Run the simulation
-vvp processor.vvp
+vvp sim.vvp
 ```
 
-> **Note:** A testbench module that drives `clk` and monitors register/memory state is recommended for full validation. The instruction memory is pre-loaded with a test program exercising all supported instruction types.
+### View Waveforms
+
+```bash
+gtkwave wave.vcd
+```
+
+### Expected Output
+
+The testbench runs a self-checking pass/fail suite against all 15 instructions in the pre-loaded program. A clean run prints:
+
+```
+==========================================================
+  SIMULATION COMPLETE
+  PASSED: 18   FAILED: 0   TOTAL: 18
+  ✓ All checks passed.
+==========================================================
+```
 
 ### Pre-Loaded Test Program
 
-The instruction memory contains the following program sequence for smoke-testing the datapath:
-
-| Address | Encoding | Instruction | Notes |
+| Address | Encoding | Instruction | Expected Result |
 |---|---|---|---|
-| 0x00 | `002081B3` | `add x3, x1, x2` | R-type |
-| 0x04 | `403202B3` | `sub x5, x4, x3` | R-type |
-| 0x08 | `00308383` | `lw x7, 3(x1)` | Load word |
-| 0x0C | `0013F333` | `and x6, x7, x1` | R-type |
-| 0x10 | `001112B3` | `sll x5, x2, x1` | Shift left |
-| 0x14 | `001122B3` | `slt x5, x2, x1` | Set less than |
-| 0x18 | `00210463` | `beq x2, x2, 4` | Branch equal |
-| 0x1C | `001132B3` | `sltu x5, x2, x1` | Unsigned SLT |
-| 0x20 | `001142B3` | `xor x5, x2, x1` | XOR |
-| 0x24 | `001152B3` | `srl x5, x2, x1` | Shift right logical |
-| 0x28 | `401152B3` | `sra x5, x2, x1` | Shift right arithmetic |
-| 0x2C | `008002EF` | `jal x5, 8` | Jump and link |
-| 0x30 | `00110293` | `addi x5, x2, 1` | Immediate add |
-| 0x34 | `00312293` | `slti x5, x2, 3` | Immediate SLT |
-| 0x38 | `00517293` | `andi x5, x2, 5` | Immediate AND |
-| 0x3C | `00211293` | `slli x5, x2, 2` | Immediate shift left |
-| 0x40 | `002102E7` | `jalr x5, x2, 2` | Jump and link register |
+| `0x00` | `002081B3` | `add  x3,  x1, x2` | x3 = 3 |
+| `0x04` | `403202B3` | `sub  x5,  x4, x3` | x5 = 1 |
+| `0x08` | `00308383` | `lw   x7,  3(x1)` | x7 = mem[4] = 4 |
+| `0x0C` | `0013F333` | `and  x6,  x7, x1` | x6 = 0 |
+| `0x10` | `001112B3` | `sll  x5,  x2, x1` | x5 = 4 |
+| `0x14` | `001122B3` | `slt  x5,  x2, x1` | x5 = 0 |
+| `0x18` | `00210463` | `beq  x2,  x2, +8` | branch taken → PC = 0x20 |
+| `0x1C` | `001132B3` | `sltu x5,  x2, x1` | *(skipped by branch)* |
+| `0x20` | `001142B3` | `xor  x5,  x2, x1` | x5 = 3 |
+| `0x24` | `001152B3` | `srl  x5,  x2, x1` | x5 = 1 |
+| `0x28` | `401152B3` | `sra  x5,  x2, x1` | x5 = 1 |
+| `0x2C` | `008002EF` | `jal  x5,  +8` | x5 = 0x30; PC = 0x34 |
+| `0x30` | `00110293` | `addi x5,  x2, 1` | *(skipped by jal)* |
+| `0x34` | `00312293` | `slti x5,  x2, 3` | x5 = 1 |
+| `0x38` | `00517293` | `andi x5,  x2, 5` | x5 = 0 |
+| `0x3C` | `00211293` | `slli x5,  x2, 2` | x5 = 8 |
+| `0x40` | `002102E7` | `jalr x5,  x2, 2` | PC = 4 (loop back) |
 
 ---
 
 ## Design Decisions & Notes
 
-**Single-cycle trade-offs.** Every instruction completes in one clock cycle, simplifying control logic at the cost of cycle time being constrained by the longest path (typically a load instruction traversing fetch → decode → ALU → memory → writeback).
+**Single-cycle trade-offs.** Every instruction completes in one clock cycle, simplifying control logic at the cost of cycle time being constrained by the longest combinational path — typically a load word instruction traversing fetch → decode → ALU → data memory → writeback.
 
-**64-bit ALU with 32-bit architecture.** The ALU operates on 64-bit operands internally. The 32-bit register values are sign-extended to 64 bits before entering the ALU, matching the behavior needed for correct arithmetic on signed quantities.
+**64-bit ALU with 32-bit architecture.** The ALU operates on 64-bit operands internally. 32-bit register values are sign-extended before entering the ALU, ensuring correct arithmetic on signed quantities. `$signed()` casts are used for `SLT` and `SRA` rather than manual two's complement manipulation.
 
-**3-to-1 writeback MUX.** Rather than a two-stage 2-to-1 MUX, a single `MUX1` selects among ALU result, memory data, and `PC+4` in one level of logic. This cleanly supports the JAL/JALR link-register write without extra pipeline-style steering logic.
+**3-to-1 writeback MUX.** A single `MUX1` selects among ALU result, memory data, and `PC+4` in one level of logic, cleanly supporting the JAL/JALR link-register write without extra steering logic.
 
-**Parameterized modules.** `ALU`, `MUX`, `MUX1`, `RegisterFile`, `InstructionMemory`, `DataMemory`, `PCCounter`, `Adder`, `add`, and `shift` are all width-parameterized, making the design adaptable for different data widths without structural changes.
+**Parameterized modules.** `ALU`, `MUX`, `MUX1`, `RegisterFile`, `InstructionMemory`, `DataMemory`, `PCCounter`, `Adder`, `BranchAdder`, and `LeftShift` are all width-parameterized for adaptability without structural changes.
 
-**Immediate generation correctness.** The B-type and J-type immediate formats in RISC-V deliberately scramble bit positions to minimize hardware cost in pipelined implementations. This design faithfully reconstructs these immediates from their non-contiguous bit fields.
+**`PCen` retained as a port.** `PCCounter` exposes a stall pin even though the top-level ties it high. This preserves a clean interface point for adding hazard detection in a future pipelined version without modifying the module itself.
 
-**Branch offset scaling.** A dedicated `shift` module left-shifts the sign-extended immediate by 1 before the branch adder, correctly implementing RISC-V's 2-byte-aligned branch encoding where the LSB of the offset is always implied to be 0.
+**Named port connections.** `architecture.v` uses named port connections (`.port(signal)`) throughout rather than positional arguments, making wiring auditable and refactoring safe.
 
 ---
 
 ## Potential Extensions
 
-- **Pipelined version** — Add IF/ID, ID/EX, EX/MEM, MEM/WB pipeline registers with hazard detection and forwarding logic.
-- **Testbench** — Add a self-checking testbench with `$monitor` / `$dumpvars` for waveform viewing in GTKWave.
-- **`$readmemh` program loading** — Replace hardcoded `initial` blocks with external hex file loading for flexible program testing.
-- **Additional B-type instructions** — Extend the controller and datapath to support `BNE`, `BLT`, `BGE`, `BLTU`, `BGEU`.
-- **U-type instructions** — Add `LUI` and `AUIPC` support with an additional immediate format in the generator.
-- **FPGA synthesis** — Target a Xilinx or Intel FPGA evaluation board using the existing synthesizable RTL.
+- **Pipelined version** — Add IF/ID, ID/EX, EX/MEM, MEM/WB pipeline registers with hazard detection and forwarding; `PCen` on `PCCounter` is already in place for stall support.
+- **`$readmemh` program loading** — Replace the hardcoded `initial` block in `InstructionMemory.v` with `$readmemh("program.hex", mem)` for flexible program testing.
+- **Additional B-type instructions** — Extend `MainController` and the branch logic to support `BNE`, `BLT`, `BGE`, `BLTU`, `BGEU`.
+- **U-type instructions** — Add `LUI` and `AUIPC` with a new immediate format in `ImmediateGeneration.v`.
+- **FPGA synthesis** — The RTL is written to be synthesizable; target a Xilinx or Intel evaluation board with minimal changes.
